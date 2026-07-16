@@ -1,9 +1,28 @@
 const fs = require('fs');
 const path = require('path');
+const { cloudinary } = require('../middleware/upload');
 
-// يحذف ملف صورة محلي من مجلد uploads بأمان — يتجاهل الروابط الخارجية (http) والملفات غير الموجودة
+// يستخرج public_id من رابط Cloudinary (بما فيه اسم المجلد) لحذفه لاحقاً
+function extractCloudinaryPublicId(url) {
+  const match = url.match(/\/upload\/(?:v\d+\/)?(.+)\.[a-zA-Z0-9]+(?:\?.*)?$/);
+  return match ? match[1] : null;
+}
+
+// يحذف صورة قديمة بأمان — من Cloudinary لو رابط سحابي، أو من القرص المحلي
+// لو مسار /uploads/ قديم (بيئة تطوير محلية). يتجاهل أي رابط آخر.
 function deleteUploadedFile(url) {
-  if (!url || typeof url !== 'string' || !url.startsWith('/uploads/')) return;
+  if (!url || typeof url !== 'string') return;
+
+  if (url.includes('res.cloudinary.com')) {
+    const publicId = extractCloudinaryPublicId(url);
+    if (!publicId) return;
+    cloudinary.uploader.destroy(publicId).catch((err) => {
+      console.error('فشل حذف الصورة من Cloudinary:', publicId, err.message);
+    });
+    return;
+  }
+
+  if (!url.startsWith('/uploads/')) return;
 
   const filePath = path.join(__dirname, '..', url);
 

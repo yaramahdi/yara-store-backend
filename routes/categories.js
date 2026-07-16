@@ -20,12 +20,12 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/categories - إضافة تصنيف جديد [auth]
-router.post('/', protect, upload.single('image'), async (req, res) => {
+router.post('/', protect, upload.single('image'), upload.uploadToCloudinary, async (req, res) => {
   try {
     const categoryData = { ...req.body };
 
     if (req.file) {
-      categoryData.image = `/uploads/${req.file.filename}`;
+      categoryData.image = req.file.url;
     }
 
     const category = await Category.create(categoryData);
@@ -36,12 +36,12 @@ router.post('/', protect, upload.single('image'), async (req, res) => {
 });
 
 // PUT /api/categories/:id - تحديث تصنيف [auth]
-router.put('/:id', protect, validateObjectId, upload.single('image'), async (req, res) => {
+router.put('/:id', protect, validateObjectId, upload.single('image'), upload.uploadToCloudinary, async (req, res) => {
   try {
     const updateData = { ...req.body };
 
     if (req.file) {
-      updateData.image = `/uploads/${req.file.filename}`;
+      updateData.image = req.file.url;
     }
 
     const before = req.file ? await Category.findById(req.params.id).select('image') : null;

@@ -22,14 +22,14 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/settings - تحديث إعدادات المتجر [auth]
-router.put('/', protect, upload.single('heroImage'), async (req, res) => {
+router.put('/', protect, upload.single('heroImage'), upload.uploadToCloudinary, async (req, res) => {
   try {
     const updateData = { ...req.body };
 
     const before = req.file ? await Settings.findOne().select('heroImage') : null;
 
     if (req.file) {
-      updateData.heroImage = `/uploads/${req.file.filename}`;
+      updateData.heroImage = req.file.url;
     }
 
     // تنظيف _id لطرق الدفع: نحذف أي _id غير صالح حتى يولّده MongoDB من جديد

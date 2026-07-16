@@ -57,9 +57,9 @@ app.use('/api/orders',        require('./routes/orders'));
 const upload = require('./middleware/upload');
 const { protect } = require('./middleware/auth');
 
-app.post('/api/upload', protect, upload.single('image'), (req, res) => {
+app.post('/api/upload', protect, upload.single('image'), upload.uploadToCloudinary, (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'لم يتم رفع أي صورة' });
-  res.json({ url: `/uploads/${req.file.filename}` });
+  res.json({ url: req.file.url });
 });
 
 // صفحة ترحيب للتحقق أن السيرفر شغّال
