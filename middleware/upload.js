@@ -45,7 +45,17 @@ const uploadToCloudinary = (req, res, next) => {
     { folder: 'yara-store' },
     (error, result) => {
       if (error) return next(error);
-      req.file.url = result.secure_url;
+      // f_auto/q_auto: يختار Cloudinary الصيغة والجودة المناسبة لكل زائر تلقائياً
+      // (WebP للمتصفحات الحديثة مثلاً) بدل تخزين نسخة واحدة ثابتة الحجم.
+      // width/crop=limit: يحدّ صور المنتجات بعرض 1600px كحد أقصى (يكفي لأي
+      // عرض بالمتجر) بدل رفع صور كاميرا الجوال بحجمها الكامل بلا داعٍ.
+      req.file.url = cloudinary.url(result.public_id, {
+        secure: true,
+        fetch_format: 'auto',
+        quality: 'auto',
+        width: 1600,
+        crop: 'limit',
+      });
       req.file.publicId = result.public_id;
       next();
     }

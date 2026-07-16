@@ -2,10 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const { cloudinary } = require('../middleware/upload');
 
-// يستخرج public_id من رابط Cloudinary (بما فيه اسم المجلد) لحذفه لاحقاً
+// يستخرج public_id من رابط Cloudinary. روابطنا فيها معاملات تحويل (f_auto,q_auto...)
+// وممكن تجي بلا امتداد ملف، فبدل تفكيك الرابط بالكامل، نبحث مباشرة عن مجلدنا
+// الثابت "yara-store/<id>" اللي نستخدمه بكل رفع.
 function extractCloudinaryPublicId(url) {
-  const match = url.match(/\/upload\/(?:v\d+\/)?(.+)\.[a-zA-Z0-9]+(?:\?.*)?$/);
-  return match ? match[1] : null;
+  const match = url.match(/yara-store\/[^/?.]+/);
+  return match ? match[0] : null;
 }
 
 // يحذف صورة قديمة بأمان — من Cloudinary لو رابط سحابي، أو من القرص المحلي
