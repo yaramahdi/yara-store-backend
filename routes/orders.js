@@ -3,6 +3,7 @@ const Order   = require('../models/Order');
 const Product = require('../models/Product');
 const { protect } = require('../middleware/auth');
 const validateObjectId = require('../middleware/validateObjectId');
+const { notifyN8nOrderCreated } = require('../utils/notifyN8nOrderCreated');
 
 const router = express.Router();
 
@@ -141,6 +142,11 @@ router.post('/', async (req, res) => {
     for (const pid of touchedProductIds) {
       await refreshProductInStock(pid);
     }
+
+    // لا نؤخر رد الطلب بسبب n8n؛ فشل الإشعار لا يلغي الطلب المحفوظ.
+    notifyN8nOrderCreated(order).catch((error) => {
+      console.error('❌ فشل إرسال إشعار الطلب إلى n8n:', error.message);
+    });
 
     res.status(201).json(order);
   } catch (error) {

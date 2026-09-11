@@ -52,6 +52,7 @@ app.use('/api/categories',    require('./routes/categories'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/settings',      require('./routes/settings'));
 app.use('/api/orders',        require('./routes/orders'));
+app.use('/api/parcels',       require('./routes/parcels'));
 
 // ── رفع الصور ──────────────────────────────────────────────
 const upload = require('./middleware/upload');
@@ -112,16 +113,32 @@ const createDefaultAdmin = async () => {
 // ── الاتصال بقاعدة البيانات وتشغيل السيرفر ─────────────────
 const PORT = process.env.PORT || 5000;
 
-mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(async () => {
-    console.log('✅conected MongoDB');
-    await createDefaultAdmin();
-    app.listen(PORT, () => {
-      console.log(`🚀 server on port: ${PORT}`);
+// انقطاع مؤقت بالشبكة أثناء الاتصال بـ Atlas وارد وطبيعي (مو خطأ برمجي)،
+// فبدل ما نطفّي السيرفر بالكامل (process.exit) ونضطر نعيد تشغيله يدوياً،
+// نعيد المحاولة تلقائياً كل 5 ثوانٍ لحد ما ينجح الاتصال.
+function connectWithRetry() {
+  mongoose
+    .connect(process.env.MONGODB_URI)
+    .then(async () => {
+      console.log('✅conected MongoDB');
+      await createDefaultAdmin();
+      app.listen(PORT, () => {
+        console.log(`🚀 server on port: ${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error('❌failed, retrying in 5s:', err.message);
+      setTimeout(connectWithRetry, 5000);
     });
-  })
-  .catch((err) => {
-    console.error('❌failed :', err.message);
-    process.exit(1);
-  });
+}
+
+connectWithRetry();
+
+// انقطاع الاتصال بعد ما كان شغّال (مو وقت الإقلاع) — نسجّله بس بلا ما نطفّي
+// السيرفر؛ سائق Mongo نفسه بيعيد الاتصال تلقائياً بالخلفية.
+mongoose.connection.on('error', (err) => {
+  console.error('⚠️ MongoDB connection error:', err.message);
+});
+mongoose.connection.on('disconnected', () => {
+  console.warn('⚠️ MongoDB disconnected — mongoose سيحاول إعادة الاتصال تلقائياً');
+});
