@@ -1,6 +1,7 @@
 const express = require('express');
-const Order   = require('../models/Order');
-const Product = require('../models/Product');
+const Order    = require('../models/Order');
+const Product  = require('../models/Product');
+const Settings = require('../models/Settings');
 const { protect } = require('../middleware/auth');
 const validateObjectId = require('../middleware/validateObjectId');
 const { notifyN8nOrderCreated } = require('../utils/notifyN8nOrderCreated');
@@ -126,15 +127,46 @@ router.post('/', async (req, res) => {
       touchedProductIds.add(String(item.productId));
     }
 
-    const realTotalPrice = preparedItems.reduce(
+    const subtotal = preparedItems.reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+      0
+    );
+
+    // كود الخصم يتحقق منه هون دايماً من قاعدة البيانات — بلا ما نثق بأي نسبة
+    // خصم جاية من الفرونت — تماماً متل ما realTotalPrice نفسه محسوب من
+    // أسعار الكتالوج الحقيقية مش من رقم بيبعته الزبون
+    let discountCode = '';
+    let discountPercent = 0;
+    let finalItems = preparedItems;
+
+    if (body.discountCode) {
+      const code = String(body.discountCode).trim().toUpperCase();
+      const settings = await Settings.findOne().select('discountCodes');
+      const match = settings?.discountCodes?.find((d) => d.code === code && d.isActive);
+
+      if (match) {
+        discountCode = match.code;
+        discountPercent = match.percent;
+        const factor = 1 - discountPercent / 100;
+        finalItems = preparedItems.map((item) => ({
+          ...item,
+          price: Math.round(Number(item.price || 0) * factor * 100) / 100,
+        }));
+      }
+    }
+
+    const realTotalPrice = finalItems.reduce(
       (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
       0
     );
 
     const orderPayload = {
       ...body,
-      items: preparedItems,
+      items: finalItems,
       totalPrice: realTotalPrice,
+      subtotal,
+      discountCode,
+      discountPercent,
     };
 
     const order = await Order.create(orderPayload);

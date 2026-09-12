@@ -1,4 +1,5 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const Settings = require('../models/Settings');
 const { protect } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -6,7 +7,9 @@ const deleteUploadedFile = require('../utils/deleteUploadedFile');
 
 const router = express.Router();
 
-// GET /api/settings - جلب إعدادات المتجر
+// GET /api/settings - جلب إعدادات المتجر (عام). أكواد الخصم حساسة تجارياً، فما
+// بترجع إلا لو الطلب جاي من أدمن مسجّل دخول (تحقق اختياري من التوكن — بلا ما
+// نرفض الطلب العام لو ما في توكن، عكس middleware/auth.protect)
 router.get('/', async (req, res) => {
   try {
     // دائماً نجلب أول وثيقة - الإعدادات وثيقة وحيدة
@@ -14,10 +17,50 @@ router.get('/', async (req, res) => {
     if (!settings) {
       settings = await Settings.create({ storeName: 'يارا ستور' });
     }
-    res.json(settings);
+
+    let isAdmin = false;
+    const token = req.headers.authorization?.startsWith('Bearer')
+      ? req.headers.authorization.split(' ')[1]
+      : null;
+    if (token) {
+      try {
+        jwt.verify(token, process.env.JWT_SECRET);
+        isAdmin = true;
+      } catch {
+        // توكن غير صالح/منتهي — نتعامل مع الطلب كطلب عام بلا رفض
+      }
+    }
+
+    const result = settings.toObject();
+    if (!isAdmin) delete result.discountCodes;
+    res.json(result);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'خطأ في جلب الإعدادات' });
+  }
+});
+
+// POST /api/settings/validate-discount - التحقق من كود خصم وقت الحجز [عام]
+// بيرجع بس نتيجة الكود المُدخل (صالح/غير صالح + النسبة)، مش كل الأكواد —
+// حتى ما تنكشف باقي الأكواد لأي زائر عبر الشبكة
+router.post('/validate-discount', async (req, res) => {
+  try {
+    const code = String(req.body?.code || '').trim().toUpperCase();
+    if (!code) {
+      return res.status(400).json({ valid: false, message: 'أدخلي كود الخصم' });
+    }
+
+    const settings = await Settings.findOne().select('discountCodes');
+    const match = settings?.discountCodes?.find((d) => d.code === code && d.isActive);
+
+    if (!match) {
+      return res.json({ valid: false, message: 'كود الخصم غير صالح' });
+    }
+
+    res.json({ valid: true, code: match.code, percent: match.percent });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ valid: false, message: 'خطأ في التحقق من كود الخصم' });
   }
 });
 
@@ -36,6 +79,17 @@ router.put('/', protect, upload.single('heroImage'), upload.uploadToCloudinary, 
     if (Array.isArray(updateData.paymentMethods)) {
       updateData.paymentMethods = updateData.paymentMethods.map(m => {
         const cleaned = { ...m };
+        if (cleaned._id && !/^[a-fA-F0-9]{24}$/.test(cleaned._id)) {
+          delete cleaned._id;
+        }
+        return cleaned;
+      });
+    }
+
+    // نفس التنظيف لأكواد الخصم (نفس نمط الإضافة المؤقتة بالفرونت)
+    if (Array.isArray(updateData.discountCodes)) {
+      updateData.discountCodes = updateData.discountCodes.map(d => {
+        const cleaned = { ...d };
         if (cleaned._id && !/^[a-fA-F0-9]{24}$/.test(cleaned._id)) {
           delete cleaned._id;
         }

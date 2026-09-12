@@ -23,6 +23,11 @@ const orderSchema = new mongoose.Schema({
   },
   items:      { type: [orderItemSchema], default: [] },
   totalPrice: { type: Number, default: 0 },
+  // كود الخصم (إن وُجد) — الأسعار بـ items أعلاه محسوبة بعد الخصم أصلاً؛
+  // subtotal محفوظ بس للعرض (كم كان المجموع قبل الخصم)
+  discountCode:    { type: String, default: '' },
+  discountPercent: { type: Number, default: 0 },
+  subtotal:        { type: Number, default: 0 },
   paymentMethod: {
     name:              { type: String, default: '' },
     accountNumber:     { type: String, default: '' },

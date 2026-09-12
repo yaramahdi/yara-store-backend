@@ -48,10 +48,13 @@ router.get('/admin/list', protect, async (req, res) => {
 // GET /api/products
 router.get('/', async (req, res) => {
   try {
-    const { category, search, page = 1, limit = 20 } = req.query;
+    const { category, search, page = 1, limit = 20, excludeId } = req.query;
 
     const query = { isVisible: true };
     if (category) query.category = category;
+    if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
+      query._id = { $ne: excludeId };
+    }
 
     if (search) {
       const matchingCategories = await Category.find(

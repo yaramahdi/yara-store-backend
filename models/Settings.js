@@ -10,6 +10,13 @@ const paymentMethodSchema = new mongoose.Schema({
   isVisible: { type: Boolean, default: true }
 }, { _id: true });
 
+// كود خصم — نسبة مئوية عن كل الطلب، تفعيل/تعطيل يدوي بلا تاريخ انتهاء
+const discountCodeSchema = new mongoose.Schema({
+  code:     { type: String, required: true, trim: true, uppercase: true },
+  percent:  { type: Number, required: true, min: 1, max: 100 },
+  isActive: { type: Boolean, default: true },
+}, { _id: true });
+
 // كولكشن منتجات مجدول — نفس الشكل الذي ترسله واجهة الأدمن (Collections.jsx)
 const collectionSchema = new mongoose.Schema({
   id:         { type: String, required: true },
@@ -38,6 +45,10 @@ const settingsSchema = new mongoose.Schema({
   },
   collections: {
     type: [collectionSchema],
+    default: []
+  },
+  discountCodes: {
+    type: [discountCodeSchema],
     default: []
   }
 }, {
