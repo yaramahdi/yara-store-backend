@@ -14,6 +14,7 @@ const paymentMethodSchema = new mongoose.Schema({
 const discountCodeSchema = new mongoose.Schema({
   code:     { type: String, required: true, trim: true, uppercase: true },
   percent:  { type: Number, required: true, min: 1, max: 100 },
+  minOrderTotal: { type: Number, default: 0, min: 0 },
   isActive: { type: Boolean, default: true },
 }, { _id: true });
 

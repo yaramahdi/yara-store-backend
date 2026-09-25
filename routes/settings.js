@@ -46,6 +46,7 @@ router.get('/', async (req, res) => {
 router.post('/validate-discount', async (req, res) => {
   try {
     const code = String(req.body?.code || '').trim().toUpperCase();
+    const orderTotal = Number(req.body?.orderTotal || 0);
     if (!code) {
       return res.status(400).json({ valid: false, message: 'أدخلي كود الخصم' });
     }
@@ -57,7 +58,16 @@ router.post('/validate-discount', async (req, res) => {
       return res.json({ valid: false, message: 'كود الخصم غير صالح' });
     }
 
-    res.json({ valid: true, code: match.code, percent: match.percent });
+    const minOrderTotal = Number(match.minOrderTotal || 0);
+    if (orderTotal < minOrderTotal) {
+      return res.json({
+        valid: false,
+        message: `هذا الكود صالح للطلبات بقيمة ${minOrderTotal} شيكل فأكثر`,
+        minOrderTotal,
+      });
+    }
+
+    res.json({ valid: true, code: match.code, percent: match.percent, minOrderTotal });
   } catch (error) {
     console.error(error);
     res.status(500).json({ valid: false, message: 'خطأ في التحقق من كود الخصم' });

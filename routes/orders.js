@@ -146,6 +146,13 @@ router.post('/', async (req, res) => {
       const match = settings?.discountCodes?.find((d) => d.code === code && d.isActive);
 
       if (match) {
+        const minOrderTotal = Number(match.minOrderTotal || 0);
+        if (subtotal < minOrderTotal) {
+          const error = new Error(`هذا الكود صالح للطلبات بقيمة ${minOrderTotal} شيكل فأكثر`);
+          error.code = 'DISCOUNT_MIN_TOTAL';
+          throw error;
+        }
+
         discountCode = match.code;
         discountPercent = match.percent;
         const factor = 1 - discountPercent / 100;
@@ -207,6 +214,10 @@ router.post('/', async (req, res) => {
 
     if (error.code === 'OUT_OF_STOCK') {
       return res.status(409).json({ message: error.message, code: 'OUT_OF_STOCK' });
+    }
+
+    if (error.code === 'DISCOUNT_MIN_TOTAL') {
+      return res.status(400).json({ message: error.message, code: 'DISCOUNT_MIN_TOTAL' });
     }
 
     if (error?.code === 11000 && error?.keyPattern?.orderNumber) {
