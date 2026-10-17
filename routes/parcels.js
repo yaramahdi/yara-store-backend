@@ -7,6 +7,12 @@ const validateObjectId = require('../middleware/validateObjectId');
 
 const router = express.Router();
 
+function parseTotalCost(value) {
+  if (value == null || String(value).trim() === '') return null;
+  const totalCost = Number(value);
+  return Number.isFinite(totalCost) && totalCost >= 0 ? totalCost : null;
+}
+
 // كل مسارات الطرود داخلية (بيانات تكلفة وربح) — أدمن فقط
 router.use(protect);
 
@@ -60,18 +66,18 @@ router.get('/', async (req, res) => {
         actualProfit += stat.profit;
       }
 
-      const styleCost = Number(parcel.styleCost || 0);
+      const totalCost = parcel.totalCost == null ? null : Number(parcel.totalCost);
 
       return {
         _id: parcel._id,
         name: parcel.name,
-        styleCost,
+        totalCost,
         productsCount: products.length,
         products,
         soldQty,
         actualRevenue: Number(actualRevenue.toFixed(2)),
         actualProfit: Number(actualProfit.toFixed(2)),
-        netProfit: Number((actualProfit - styleCost).toFixed(2)),
+        netProfit: totalCost == null ? null : Number((actualRevenue - totalCost).toFixed(2)),
         createdAt: parcel.createdAt,
       };
     });
@@ -91,7 +97,7 @@ router.get('/:id', validateObjectId, async (req, res) => {
 
     const soldMap = await buildSoldStatsMap();
 
-    let styleCost = Number(parcel.styleCost || 0);
+    const totalCost = parcel.totalCost == null ? null : Number(parcel.totalCost);
     let actualRevenue = 0;
     let actualProfit = 0;
     let soldQty = 0;
@@ -119,12 +125,12 @@ router.get('/:id', validateObjectId, async (req, res) => {
     res.json({
       _id: parcel._id,
       name: parcel.name,
-      styleCost,
+      totalCost,
       products,
       soldQty,
       actualRevenue: Number(actualRevenue.toFixed(2)),
       actualProfit: Number(actualProfit.toFixed(2)),
-      netProfit: Number((actualProfit - styleCost).toFixed(2)),
+      netProfit: totalCost == null ? null : Number((actualRevenue - totalCost).toFixed(2)),
       createdAt: parcel.createdAt,
     });
   } catch (error) {
@@ -136,11 +142,15 @@ router.get('/:id', validateObjectId, async (req, res) => {
 // POST /api/parcels — إنشاء طرد جديد
 router.post('/', async (req, res) => {
   try {
-    const { name, styleCost, products } = req.body;
+    const { name, products } = req.body;
+    const totalCost = parseTotalCost(req.body.totalCost);
+    if (totalCost == null) {
+      return res.status(400).json({ message: 'إجمالي تكلفة الطرد مطلوب ويجب أن يكون صفرًا أو أكثر' });
+    }
 
     const parcel = await Parcel.create({
       name,
-      styleCost: Number(styleCost) || 0,
+      totalCost,
       products: Array.isArray(products) ? products : [],
     });
 
@@ -157,13 +167,17 @@ router.post('/', async (req, res) => {
 // PUT /api/parcels/:id — تعديل طرد
 router.put('/:id', validateObjectId, async (req, res) => {
   try {
-    const { name, styleCost, products } = req.body;
+    const { name, products } = req.body;
+    const totalCost = parseTotalCost(req.body.totalCost);
+    if (totalCost == null) {
+      return res.status(400).json({ message: 'إجمالي تكلفة الطرد مطلوب ويجب أن يكون صفرًا أو أكثر' });
+    }
 
     const parcel = await Parcel.findByIdAndUpdate(
       req.params.id,
       {
         name,
-        styleCost: Number(styleCost) || 0,
+        totalCost,
         products: Array.isArray(products) ? products : [],
       },
       { new: true, runValidators: true }
