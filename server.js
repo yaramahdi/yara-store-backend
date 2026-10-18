@@ -23,12 +23,15 @@ if (process.env.FRONTEND_URL) {
   const allowedOrigins = [
     process.env.FRONTEND_URL,
     'http://localhost:5173',
+    'https://yarastore.shop',
+    'https://www.yarastore.shop',
+    'https://yara-store-gz.vercel.app',
     'http://localhost:3000',
     'http://localhost:4173',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:4173',
-  ];
+  ].filter(Boolean);
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
@@ -46,13 +49,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ── Routes ──────────────────────────────────────────────────
-app.use('/api/auth',          require('./routes/auth'));
-app.use('/api/products',      require('./routes/products'));
-app.use('/api/categories',    require('./routes/categories'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/products', require('./routes/products'));
+app.use('/api/categories', require('./routes/categories'));
 app.use('/api/announcements', require('./routes/announcements'));
-app.use('/api/settings',      require('./routes/settings'));
-app.use('/api/orders',        require('./routes/orders'));
-app.use('/api/parcels',       require('./routes/parcels'));
+app.use('/api/settings', require('./routes/settings'));
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/parcels', require('./routes/parcels'));
 
 // ── رفع الصور ──────────────────────────────────────────────
 const upload = require('./middleware/upload');
