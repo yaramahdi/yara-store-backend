@@ -73,9 +73,9 @@ router.get('/', async (req, res) => {
     const total = await Product.countDocuments(query);
 
     const products = await Product.find(query)
-      .select('-rawCost')
+      .select('-rawCost -visibleAt')
       .populate('category', 'name')
-      .sort({ createdAt: -1 })
+      .sort({ inStock: -1, visibleAt: 1, createdAt: -1, _id: -1 })
       .skip(skip)
       .limit(Number(limit));
 
@@ -136,6 +136,7 @@ router.post('/', protect, async (req, res) => {
     if (typeof productData.sizeGuide    === 'string') productData.sizeGuide    = JSON.parse(productData.sizeGuide);
     if (typeof productData.linkedColors === 'string') productData.linkedColors = JSON.parse(productData.linkedColors);
     if (typeof productData.images       === 'string') productData.images       = JSON.parse(productData.images);
+    productData.visibleAt = productData.isVisible === false ? null : new Date();
 
     const product   = await Product.create(productData);
     const populated = await product.populate('category', 'name');
@@ -161,7 +162,12 @@ router.put('/:id', protect, validateObjectId, async (req, res) => {
       : [];
 
     // جلب الروابط والصور القديمة لمعرفة ما تم حذفه
-    const before = await Product.findById(thisId).select('linkedColors images image');
+    const before = await Product.findById(thisId).select('linkedColors images image isVisible visibleAt');
+    if (updateData.isVisible === false) {
+      updateData.visibleAt = null;
+    } else if (updateData.isVisible === true && before?.isVisible !== true) {
+      updateData.visibleAt = new Date();
+    }
     const oldLinkedIds = (before?.linkedColors || []).map(c => String(c.productId));
     const oldImages = [...(before?.images || []), before?.image].filter(Boolean);
 
@@ -237,6 +243,7 @@ router.patch('/:id/toggle-visibility', protect, validateObjectId, async (req, re
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'المنتج غير موجود' });
     product.isVisible = !product.isVisible;
+    product.visibleAt = product.isVisible ? new Date() : null;
     await product.save();
     res.json({ isVisible: product.isVisible });
   } catch (error) {

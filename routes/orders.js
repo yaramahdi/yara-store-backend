@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Order    = require('../models/Order');
 const Product  = require('../models/Product');
 const Settings = require('../models/Settings');
@@ -32,6 +33,26 @@ async function refreshProductInStock(productId) {
   if (product.inStock !== inStock) {
     await Product.findByIdAndUpdate(productId, { inStock });
   }
+}
+
+async function changeProductStockForOrderItem(item, quantity, multiplier) {
+  const productId = String(item.productId || '');
+  const amount = Number(quantity) * multiplier;
+  if (!mongoose.Types.ObjectId.isValid(productId) || !Number.isFinite(amount) || amount === 0) {
+    return false;
+  }
+
+  const update = { $inc: item.selectedSize
+    ? { 'sizes.$.stock': amount }
+    : { stock: amount } };
+  const query = item.selectedSize
+    ? {
+        _id: productId,
+        sizes: { $elemMatch: { label: item.selectedSize, stock: { $type: 'number' } } },
+      }
+    : { _id: productId, stock: { $type: 'number' } };
+  const updated = await Product.findOneAndUpdate(query, update, { new: true });
+  return Boolean(updated);
 }
 
 // POST /api/orders — إنشاء طلب جديد (عام، بدون توثيق)
@@ -328,9 +349,48 @@ router.get('/stats/dashboard', protect, async (req, res) => {
 
 // PATCH /api/orders/:id/confirm — تأكيد الطلب [أدمن]
 router.patch('/:id/confirm', protect, validateObjectId, async (req, res) => {
+  const restoredStock = [];
+  let orderSaved = false;
+
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'الطلب غير موجود' });
+    if (order.status !== 'pending') {
+      return res.status(409).json({ message: 'لا يمكن تعديل أو تأكيد هذا الطلب' });
+    }
+
+    const originalItems = (order.items || []).map((item) => item.toObject());
+    let itemsToConfirm = originalItems.map((item, index) => ({
+      index,
+      quantity: Number(item.quantity || 1),
+    }));
+
+    if (req.body?.itemsToConfirm !== undefined) {
+      if (!Array.isArray(req.body.itemsToConfirm) || req.body.itemsToConfirm.length === 0) {
+        return res.status(400).json({ message: 'يجب إبقاء قطعة واحدة على الأقل في الطلب' });
+      }
+
+      const seenIndexes = new Set();
+      itemsToConfirm = [];
+      for (const entry of req.body.itemsToConfirm) {
+        const index = Number(entry?.index);
+        const quantity = Number(entry?.quantity);
+        const originalQuantity = Number(originalItems[index]?.quantity || 1);
+        if (
+          !Number.isInteger(index)
+          || index < 0
+          || index >= originalItems.length
+          || seenIndexes.has(index)
+          || !Number.isInteger(quantity)
+          || quantity < 1
+          || quantity > originalQuantity
+        ) {
+          return res.status(400).json({ message: 'بيانات القطع المحددة للتأكيد غير صحيحة' });
+        }
+        seenIndexes.add(index);
+        itemsToConfirm.push({ index, quantity });
+      }
+    }
 
     const mode = req.body?.priceMode === 'custom' ? 'custom' : 'catalog';
     const customSalePrices = Array.isArray(req.body?.customSalePrices)
@@ -338,11 +398,32 @@ router.patch('/:id/confirm', protect, validateObjectId, async (req, res) => {
       : [];
     const legacyCustomSalePrice = Number(req.body?.customSalePrice);
 
-    if (mode === 'custom' && customSalePrices.length > 0 && customSalePrices.length !== order.items.length) {
+    if (mode === 'custom' && customSalePrices.length > 0 && customSalePrices.length !== itemsToConfirm.length) {
       return res.status(400).json({ message: 'عدد أسعار البيع لا يطابق عدد قطع الطلب' });
     }
 
-    const updatedItems = (order.items || []).map((item, index) => {
+    const retainedItems = itemsToConfirm.map(({ index, quantity }) => ({
+      ...originalItems[index],
+      quantity,
+    }));
+    const retainedByIndex = new Map(itemsToConfirm.map(({ index, quantity }) => [index, quantity]));
+    const removedItems = originalItems
+      .map((item, index) => ({
+        item,
+        quantity: Number(item.quantity || 1) - (retainedByIndex.get(index) || 0),
+      }))
+      .filter(({ quantity }) => quantity > 0);
+
+    for (const { item, quantity } of removedItems) {
+      if (await changeProductStockForOrderItem(item, quantity, 1)) {
+        restoredStock.push({ item, quantity });
+      }
+    }
+    for (const { item } of restoredStock) {
+      await refreshProductInStock(item.productId);
+    }
+
+    const updatedItems = retainedItems.map((item, index) => {
       const qty = Number(item.quantity || 1);
       const saleUnit = mode === 'custom'
         ? customSalePrices.length > 0
@@ -358,11 +439,22 @@ router.patch('/:id/confirm', protect, validateObjectId, async (req, res) => {
       const profit = (saleUnit - rawCost) * qty;
 
       return {
-        ...item.toObject(),
+        ...item,
         salePrice: saleUnit,
         profit,
       };
     });
+
+    if (req.body?.itemsToConfirm !== undefined) {
+      order.items = retainedItems;
+      const discountFactor = 1 - Number(order.discountPercent || 0) / 100;
+      if (discountFactor > 0) {
+        order.subtotal = retainedItems.reduce((sum, item) => {
+          const originalPrice = Math.round(Number(item.price || 0) / discountFactor * 100) / 100;
+          return sum + originalPrice * Number(item.quantity || 1);
+        }, 0);
+      }
+    }
 
     const confirmedRevenue = updatedItems.reduce((sum, item) => {
       const qty = Number(item.quantity || 1);
@@ -380,10 +472,20 @@ router.patch('/:id/confirm', protect, validateObjectId, async (req, res) => {
     order.totalPrice = confirmedRevenue;
 
     await order.save();
-
-    const freshOrder = await Order.findById(order._id);
-    res.json(freshOrder);
+    orderSaved = true;
+    res.json(order);
   } catch (error) {
+    if (!orderSaved) {
+      for (let index = restoredStock.length - 1; index >= 0; index -= 1) {
+        const { item, quantity } = restoredStock[index];
+        try {
+          await changeProductStockForOrderItem(item, quantity, -1);
+          await refreshProductInStock(item.productId);
+        } catch (rollbackError) {
+          console.error('❌ فشل التراجع عن إعادة مخزون قطعة من الطلب:', rollbackError.message);
+        }
+      }
+    }
     if (error.message === 'سعر البيع المخصص غير صالح') {
       return res.status(400).json({ message: 'سعر البيع المخصص غير صالح' });
     }
