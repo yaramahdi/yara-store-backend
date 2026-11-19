@@ -48,10 +48,21 @@ router.get('/admin/list', protect, async (req, res) => {
 // GET /api/products
 router.get('/', async (req, res) => {
   try {
-    const { category, search, page = 1, limit = 20, excludeId } = req.query;
+    const { category, search, page = 1, limit = 20, excludeId, department = 'clothes' } = req.query;
 
     const query = { isVisible: true };
-    if (category) query.category = category;
+    const departmentValue = department === 'shoes' ? 'shoes' : 'clothes';
+    const departmentCategories = await Category.find(
+      departmentValue === 'shoes'
+        ? { department: 'shoes' }
+        : { $or: [{ department: 'clothes' }, { department: { $exists: false } }] },
+      '_id'
+    );
+    const departmentCategoryIds = departmentCategories.map((item) => item._id);
+    query.category = { $in: departmentCategoryIds };
+    if (category && departmentCategoryIds.some((id) => String(id) === String(category))) {
+      query.category = category;
+    }
     if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
       query._id = { $ne: excludeId };
     }
@@ -73,9 +84,9 @@ router.get('/', async (req, res) => {
     const total = await Product.countDocuments(query);
 
     const products = await Product.find(query)
-      .select('-rawCost -visibleAt')
+      .select('-rawCost')
       .populate('category', 'name')
-      .sort({ inStock: -1, visibleAt: 1, createdAt: -1, _id: -1 })
+      .sort({ inStock: -1, createdAt: -1, _id: -1 })
       .skip(skip)
       .limit(Number(limit));
 
@@ -136,8 +147,6 @@ router.post('/', protect, async (req, res) => {
     if (typeof productData.sizeGuide    === 'string') productData.sizeGuide    = JSON.parse(productData.sizeGuide);
     if (typeof productData.linkedColors === 'string') productData.linkedColors = JSON.parse(productData.linkedColors);
     if (typeof productData.images       === 'string') productData.images       = JSON.parse(productData.images);
-    productData.visibleAt = productData.isVisible === false ? null : new Date();
-
     const product   = await Product.create(productData);
     const populated = await product.populate('category', 'name');
     res.status(201).json(populated);
@@ -162,12 +171,7 @@ router.put('/:id', protect, validateObjectId, async (req, res) => {
       : [];
 
     // جلب الروابط والصور القديمة لمعرفة ما تم حذفه
-    const before = await Product.findById(thisId).select('linkedColors images image isVisible visibleAt');
-    if (updateData.isVisible === false) {
-      updateData.visibleAt = null;
-    } else if (updateData.isVisible === true && before?.isVisible !== true) {
-      updateData.visibleAt = new Date();
-    }
+    const before = await Product.findById(thisId).select('linkedColors images image');
     const oldLinkedIds = (before?.linkedColors || []).map(c => String(c.productId));
     const oldImages = [...(before?.images || []), before?.image].filter(Boolean);
 
@@ -243,7 +247,6 @@ router.patch('/:id/toggle-visibility', protect, validateObjectId, async (req, re
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'المنتج غير موجود' });
     product.isVisible = !product.isVisible;
-    product.visibleAt = product.isVisible ? new Date() : null;
     await product.save();
     res.json({ isVisible: product.isVisible });
   } catch (error) {

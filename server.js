@@ -113,6 +113,31 @@ const createDefaultAdmin = async () => {
   }
 };
 
+const ensureHeelCategory = async () => {
+  try {
+    const Category = require('./models/Category');
+    const shoeCategory = await Category.findOne({
+      $or: [
+        { department: 'shoes' },
+        { name: { $regex: 'هيلز|أحذي|احذي', $options: 'i' } },
+      ],
+    });
+    if (shoeCategory) {
+      shoeCategory.department = 'shoes';
+      await shoeCategory.save();
+    } else {
+      await Category.create({
+        name: 'الهيلزات',
+        department: 'shoes',
+        isVisible: true,
+        order: 0,
+      });
+    }
+  } catch (error) {
+    console.error('❌ خطأ في إنشاء فئة الأحذية:', error.message);
+  }
+};
+
 // ── الاتصال بقاعدة البيانات وتشغيل السيرفر ─────────────────
 const PORT = process.env.PORT || 5000;
 
@@ -125,6 +150,7 @@ function connectWithRetry() {
     .then(async () => {
       console.log('✅conected MongoDB');
       await createDefaultAdmin();
+      await ensureHeelCategory();
       app.listen(PORT, () => {
         console.log(`🚀 server on port: ${PORT}`);
       });

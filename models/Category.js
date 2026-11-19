@@ -14,6 +14,11 @@ const categorySchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  department: {
+    type: String,
+    enum: ['clothes', 'shoes'],
+    default: 'clothes'
+  },
   // ترتيب الظهور في الواجهة
   order: {
     type: Number,

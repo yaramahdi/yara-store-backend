@@ -11,7 +11,14 @@ const router = express.Router();
 // GET /api/categories - جلب كل التصنيفات مع فلترة حسب النوع
 router.get('/', async (req, res) => {
   try {
-    const categories = await Category.find({}).sort({ order: 1, createdAt: 1 });
+    const department = req.query.department;
+    let query = {};
+    if (department === 'shoes') {
+      query = { department: 'shoes' };
+    } else if (department === 'clothes') {
+      query = { $or: [{ department: 'clothes' }, { department: { $exists: false } }] };
+    }
+    const categories = await Category.find(query).sort({ order: 1, createdAt: 1 });
     res.json(categories);
   } catch (error) {
     console.error(error);
